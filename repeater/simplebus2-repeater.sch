@@ -200,8 +200,6 @@ F 3 "https://www.onsemi.com/pub/Collateral/PN2222-D.PDF" H 7040 3950 50  0001 L 
 	1    7040 3950
 	-1   0    0    -1  
 $EndComp
-Wire Wire Line
-	6830 3580 7690 3580
 $Comp
 L Device:R R6
 U 1 1 60A76B3E
@@ -230,10 +228,6 @@ Wire Wire Line
 	6940 3410 6940 3750
 Wire Wire Line
 	7540 3950 7610 3950
-Wire Wire Line
-	7610 3950 7610 3480
-Wire Wire Line
-	7610 3480 7690 3480
 Wire Wire Line
 	6940 4150 6940 4260
 Wire Wire Line
@@ -357,4 +351,14 @@ Wire Wire Line
 Connection ~ 5710 3660
 Wire Wire Line
 	5710 3660 5540 3660
+Wire Wire Line
+	7610 3580 7690 3580
+Wire Wire Line
+	7610 3580 7610 3950
+Wire Wire Line
+	6830 3580 7520 3580
+Wire Wire Line
+	7520 3580 7520 3480
+Wire Wire Line
+	7520 3480 7690 3480
 $EndSCHEMATC
