@@ -83,7 +83,7 @@ The final setup was:
 
 The circuit that decodes the Simplebus2 messages is shown below:
 
-![8994681621349035928](https://user-images.githubusercontent.com/182937/119274024-1f8f9680-bc0e-11eb-83b6-ef4311cebe2d.png)
+![diagram](https://user-images.githubusercontent.com/182937/119274823-27513a00-bc12-11eb-81a5-44e7b55a2baf.png)
 
 The bridge rectifier (DB1) fixes the polarity of the input, so that the Simplebus2 wires can be connected in any way without having to take their polarity into account. A low-pass filter (R1 and C1) removes the voltage fluctuations produced by signals and feeds the base DC to the LM7805 voltage regulator that provides 5V to the other components. A high-pass filter (R2 and C3) removes the DC component on the Simplebus2 line allowing the signals pass to the non-inverting input of a LM2903 comparator. The comparator's inverting input receives a reference voltage of around 500mV produced by the voltage divider (R3 and R4).
 
