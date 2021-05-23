@@ -5,7 +5,7 @@ Simplebus2 is a two-wire door entry system created by the Italian company Comeli
 
 The building where I live has one of those systems, so I wanted to understand how it worked in order to solve a practical problem: getting notified when someone is ringing my doorbell. I work from home and usually wear noise-cancelling headphones while working, which means that I can't hear the doorbell. I wanted to install a complementary notification system, such as a light that turns on, or something that vibrates on my desk.
 
-In this project I'm sharing my findings about how the Simplebus2 system, and a detailed description of the devices I've built.
+In this project I'm sharing my findings about how the Simplebus2 system works, and a detailed description of the devices I've built.
 
 How it works
 ------------
