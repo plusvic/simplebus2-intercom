@@ -31,7 +31,7 @@ Messages are transmitted using pulse length encoding, where each bit consists in
 
 The image above shows the capture of a message with an oscilloscope, the yellow stripes are the 25kHz bursts, which have always the same width because they are all 3ms long. You can also see that the space in between the bursts are not homogeneous, some spaces are wider than others, the wider ones (6ms) represent the 1s, the narrower (3ms) are 0s. The preamble can be also clearly appreciated. 
 
-The bits in green correspond to the message code, the ones in red are the intercom's address, and the checksum is shown in yellow. The most significant bit (MSB) is sent first, so the actual values are:
+The bits in green correspond to the message code, the ones in red are the intercom's address, and the checksum is shown in yellow. The least significant bit (LSB) is sent first, so the actual values are:
 
 Message code:  110000 = 48
 
