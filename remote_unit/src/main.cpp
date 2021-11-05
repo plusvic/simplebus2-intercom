@@ -1,19 +1,38 @@
+#ifdef WEMOS_D1_MINI
+#define BLYNK_PRINT Serial
+#endif
+
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <ESP8266WiFi.h>    
 #include <FastLED.h>
 #include <SoftwareSerial.h>
-#include <Ticker.h>
-#include <AsyncMqttClient.h>
+#include <BlynkSimpleEsp8266.h>
+#include <time.h>
 
 #define NUM_LEDS 60
 
-const int BUZZER = D0;
-const int LED_STRIPE = D3;
-const int INTERCOM_RX = D2;    // Connect to the TX pin of the HC-12
-const int INTERCOM_TX = D1;    // Connect to the RX pin of the HC-12
-const int OPEN_DOOR = D5;      // Connected to ground when a button is pushed.
+#ifdef WEMOS_D1_MINI
+const int LED_STRIP = D3;     // Connect to data pin of Neopixel LED strip
+const int INTERCOM_RX = D2;   // Connect to the TX pin of the HC-12
+const int INTERCOM_TX = D1;   // Connect to the RX pin of the HC-12
+#else
+const int LED_STRIP = 0;
+const int INTERCOM_RX = 3;    // Connect to the TX pin of the HC-12
+const int INTERCOM_TX = 1;    // Connect to the RX pin of the HC-12
+#endif
 
+
+#ifdef BUZZER_ENABLED
+  #ifdef WEMOS_D1_MINI
+  const int BUZZER = D0;
+  #endif
+#endif
+
+#ifdef OPEN_DOOR_BUTTON_ENABLED
+  #ifdef WEMOS_D1_MINI
+  const int OPEN_DOOR = D5;     // Connect to ground when a button is pushed
+  #endif
+#endif
 
 const int MY_ADDRESS = 12;
 
@@ -28,13 +47,11 @@ const char *ssid = "WiFi SSID here";
 //
 const char *wifiPassword = "WiFi password here";  
 
+
 ///////////////////////////////////////////////////////////////////////////////
-// MQTT settings.
+// Blynk token.
 //
-const char* mqttServer = "broker.emqx.io";
-const int mqttPort = 1883;
-const char* mqttUser = "emqx";
-const char* mqttPassword = "public";
+const char *blynkToken = "Blynk token here";
 
 ///////////////////////////////////////////////////////////////////////////////
 // Message codes
@@ -112,42 +129,81 @@ const char* mqttPassword = "public";
 #define MSG_STOP_BLINKING_OPEN_DOOR_BTN     52
 
 
+///////////////////////////////////////////////////////////////////////////////
+// Global variables
+// 
+WidgetTerminal terminal(V2);
+
 SoftwareSerial intercom(INTERCOM_RX, INTERCOM_TX);
 
 CRGB leds[NUM_LEDS];
 
-WiFiClient wifiClient;
-WiFiEventHandler wifiConnectHandler;
-WiFiEventHandler wifiDisconnectHandler;
-
-AsyncMqttClient mqttClient;
-
-Ticker wifiReconnectTimer;
-Ticker mqttReconnectTimer;
-
 unsigned long lastOpenDoorTime;
 
-void connectToWifi() {
-  Serial.println("Connecting to Wi-Fi...");
-  WiFi.begin(ssid, wifiPassword);
-}
 
-void connectToMqtt() {
-  Serial.println("Connecting to MQTT...");
-  mqttClient.connect();
-}
-
-void signalCall()
+void ledStripBlink(const CRGB &color)
 {
+  #ifdef BUZZER_ENABLED
   digitalWrite(BUZZER, HIGH);
-  fill_solid(leds, NUM_LEDS, CRGB::Red);
+  #endif
+
+  fill_solid(leds, NUM_LEDS, color);
   FastLED.show(); 
-  delay(1000);
+  
+  delay(500);
+  
+  #ifdef BUZZER_ENABLED
   digitalWrite(BUZZER, LOW);
+  #endif
+
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
-  delay(500);
 }
+
+void setup() 
+{
+  #ifdef SERIAL_OUTPUT
+  Serial.begin(115200);
+  delay(1000);
+  #endif
+
+  #if BUZZER_ENABLED
+  pinMode(BUZZER, OUTPUT);
+  #endif
+
+  #if OPEN_DOOR_BUTTON_ENABLED
+  pinMode(OPEN_DOOR, INPUT_PULLUP);
+  #endif
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  intercom.begin(4800);
+
+  Blynk.begin(blynkToken, ssid, wifiPassword);
+
+  lastOpenDoorTime = 0;
+
+  FastLED.addLeds<NEOPIXEL, LED_STRIP>(leds, NUM_LEDS);
+  FastLED.setBrightness(120);
+
+  pinMode(LED_STRIP, OUTPUT_OPEN_DRAIN);
+  
+  ledStripBlink(CRGB::Red);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  ledStripBlink(CRGB::Green);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  ledStripBlink(CRGB::Blue);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
 
 void transmitMessage(byte msgCode, byte msgAddr)
 {
@@ -159,127 +215,94 @@ void transmitMessage(byte msgCode, byte msgAddr)
   intercom.write(msgCode << 6);
   intercom.write((msgAddr << 4) | (msgCode >> 2));
   intercom.write((checksum << 4) | (msgAddr >> 4));
-
+  
+  #ifdef SERIAL_OUTPUT
   Serial.print("TX -> code: ");
   Serial.print(msgCode);
   Serial.print(" address: ");
   Serial.println(msgAddr);
+  #endif
+
+  terminal.print("TX -> code: ");
+  terminal.print(msgCode);
+  terminal.print(" address: ");
+  terminal.println(msgAddr);
+  terminal.flush();
 }
 
-void onWifiConnect(const WiFiEventStationModeGotIP& event) {
-  Serial.print("Connected to Wi-Fi, IP:");
-  Serial.println(WiFi.localIP());
-  connectToMqtt();
-}
 
-void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
-  Serial.println("Disconnected from Wi-Fi.");
-  // Ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-  mqttReconnectTimer.detach(); 
-  wifiReconnectTimer.once(2, connectToWifi);
-}
-
-void onMqttConnect(bool sessionPresent) {
-  Serial.println("Connected to MQTT.");
-  Serial.print("Session present: ");
-  Serial.println(sessionPresent);
-  
-  packetIdSub = mqttClient.subscribe("simplebus2/intercom", 0);
-  Serial.print("Subscribing at QoS 2, packetId: ");
-  Serial.println(packetIdSub);
-
-  // Turn off the built-in led, which indicates that we connected
-  // successfully to MQTT. Notice that if LED_BUILTIN is HIGH the
-  // led is OFF.
-  digitalWrite(LED_BUILTIN, HIGH);
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  Serial.print("Disconnected from MQTT. Reason: ");
-  Serial.println((int )reason);
-  if (WiFi.isConnected()) {
-    mqttReconnectTimer.once(2, connectToMqtt);
-  }
-}
-
-void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
-  Serial.println("Subscribe acknowledged.");
-  Serial.print("  packetId: ");
-  Serial.println(packetId);
-  Serial.print("  QoS: ");
-  Serial.println(qos);
-}
-
-void onMqttUnsubscribe(uint16_t packetId) {
-  Serial.println("Unsubscribe acknowledged.");
-  Serial.print("  packetId: ");
-  Serial.println(packetId);
-}
-
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  DynamicJsonDocument doc(200);
-  DeserializationError error = deserializeJson(doc, payload);
- 
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
-
-  byte msgCode = doc["code"];
-  byte msgAddr = doc["address"];
-
-  transmitMessage(msgCode, msgAddr);
-}
-
-void onMqttPublish(uint16_t packetId) {
-  Serial.println("Publish acknowledged.");
-  Serial.print("  packetId: ");
-  Serial.println(packetId);
-}
-
-void setup() 
+void processMessage(byte msgCode, byte msgAddr) 
 {
-  Serial.begin(115200);
-  delay(1000);
+  #ifdef SERIAL_OUTPUT
+  Serial.print("RX <- code: ");    
+  Serial.print(msgCode, DEC);
+  Serial.print(" address: ");
+  Serial.println(msgAddr, DEC);
+  #endif
 
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(BUZZER, OUTPUT);
-  pinMode(OPEN_DOOR, INPUT_PULLUP);
-  
-  FastLED.addLeds<NEOPIXEL, LED_STRIPE>(leds, NUM_LEDS);
-  FastLED.setBrightness(120);
+  terminal.print("RX <- code: ");    
+  terminal.print(msgCode, DEC);
+  terminal.print(" address: ");
+  terminal.println(msgAddr, DEC);
+  terminal.flush();
 
-  intercom.begin(4800);
+  unsigned long currentTime = millis();
 
-  wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
-  wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
+  if (msgAddr == MY_ADDRESS) {
+    switch (msgCode)
+    {
+    case MSG_CALL_TO_SECONDARY_SWITCHBOARD:
+    case MSG_CALL_FROM_ENTRY_DOOR:
+      ledStripBlink(CRGB::Red);
+      break;
+    case MSG_CALL_FROM_ENTRY_DOOR_SCREEN_ON:
+      // If I opened the door less than 60 seconds ago, open
+      // the door automatically if another call occurs.
+      if (lastOpenDoorTime > 0 && currentTime - lastOpenDoorTime < 60000) {
+        // Wait for 2.5 seconds before opening the door. 
+        delay(2500);
+        transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
+      } else {
+        Blynk.notify("Someone is calling at the door");
+        ledStripBlink(CRGB::Red);
+      }
+      break;
+    case MSG_OPEN_DOOR:
+      lastOpenDoorTime = currentTime;
+      break;
+    }
+  }
+}
 
-  mqttClient.onConnect(onMqttConnect);
-  mqttClient.onDisconnect(onMqttDisconnect);
-  mqttClient.onSubscribe(onMqttSubscribe);
-  mqttClient.onUnsubscribe(onMqttUnsubscribe);
-  mqttClient.onMessage(onMqttMessage);
-  mqttClient.onPublish(onMqttPublish);
-  mqttClient.setServer(mqttServer, mqttPort);
-
-  connectToWifi();
-
-  lastOpenDoorTime = 0;
+// 
+// Receive commands sent from the Blynk app via V0.
+//
+BLYNK_WRITE(V0) {
+  byte msgCode = param.asInt();
+  if (msgCode != 0) {
+    transmitMessage(msgCode, MY_ADDRESS);
+    if (msgCode == MSG_OPEN_DOOR)
+      lastOpenDoorTime = millis();
+  }
 }
 
 
 void loop()
 {
-  unsigned long currentTime = millis();
+  Blynk.run();
 
+  #ifdef OPEN_DOOR_BUTTON_ENABLED
   if (digitalRead(OPEN_DOOR) == LOW) {
-    transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
-    lastOpenDoorTime = currentTime;
-    delay(1000);
+    unsigned long currentTime = millis();
+    if (currentTime - lastOpenDoorTime > 1000) {
+      transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
+      lastOpenDoorTime = millis();
+    }
   }
+  #endif
 
-  if (intercom.available()) {
+  if (intercom.available())
+  {
     byte msg[3];
     intercom.readBytes(msg, 3);
 
@@ -292,34 +315,7 @@ void loop()
     actualChecksum += __builtin_popcount(msgAddr);
   
     if (msgCode != 0 && actualChecksum == expectedChecksum) {
-      Serial.print("RX <- code: ");    
-      Serial.print(msgCode, DEC);
-      Serial.print(" address: ");
-      Serial.print(msgAddr, DEC);
-      Serial.print(" checksum: ");
-      Serial.println(expectedChecksum, DEC);
-      
-      if (msgAddr == MY_ADDRESS) {
-        switch (msgCode)
-        {
-        case MSG_RING_TONE:
-        case MSG_RING_TONE_SCREEN_ON:
-          // If I opened the door less than 60 seconds ago, open
-          // the door automatically if another call occurs.
-          if (lastOpenDoorTime > 0 && currentTime - lastOpenDoorTime < 60000) {
-            if (msgCode == MSG_RING_TONE_SCREEN_ON) {
-              delay(3000);
-              transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
-            }
-          } else {
-            signalCall();
-          }
-          break;
-        case MSG_OPEN_DOOR:
-          lastOpenDoorTime = currentTime;
-          break;
-        }
-      }
+      processMessage(msgCode, msgAddr);
     } 
   }
 }
