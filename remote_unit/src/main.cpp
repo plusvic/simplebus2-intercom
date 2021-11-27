@@ -7,8 +7,11 @@
 #include <FastLED.h>
 #include <SoftwareSerial.h>
 #include <BlynkSimpleEsp8266.h>
+#include <InputDebounce.h>
 #include <time.h>
 
+
+#define BUTTON_DEBOUNCE_DELAY   20   // Milliseoncds
 #define NUM_LEDS 60
 
 #ifdef WEMOS_D1_MINI
@@ -35,7 +38,7 @@ const int INTERCOM_TX = 1;    // Connect to the RX pin of the HC-12
 #endif
 
 const int MY_ADDRESS = 12;
-
+const int SILENT_MODE_COLOR  = CRGB::Blue;
 
 ///////////////////////////////////////////////////////////////////////////////
 // SSID of the WiFi network to connect.
@@ -138,13 +141,26 @@ SoftwareSerial intercom(INTERCOM_RX, INTERCOM_TX);
 
 CRGB leds[NUM_LEDS];
 
+InputDebounce inputButton;
+
+
+// Last time the door was opened, either with Blynk or the input button.
 unsigned long lastOpenDoorTime;
 
+// While in silent mode the buzzer is disabled and only the leds are
+// turned on if someone rings the door.
+bool silentMode;
 
-void ledStripBlink(const CRGB &color)
+// True if the input button has remained pressed for more than 1s, goes
+// to False again once the button has been released.
+bool longTap;
+
+
+void notifyCall(const CRGB &color)
 {
   #ifdef BUZZER_ENABLED
-  digitalWrite(BUZZER, HIGH);
+  if (!silentMode)
+    digitalWrite(BUZZER, HIGH);
   #endif
 
   fill_solid(leds, NUM_LEDS, color);
@@ -156,52 +172,12 @@ void ledStripBlink(const CRGB &color)
   digitalWrite(BUZZER, LOW);
   #endif
 
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  if (silentMode)
+    fill_solid(leds, NUM_LEDS, SILENT_MODE_COLOR);
+  else 
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+
   FastLED.show();
-}
-
-void setup() 
-{
-  #ifdef SERIAL_OUTPUT
-  Serial.begin(115200);
-  delay(1000);
-  #endif
-
-  #if BUZZER_ENABLED
-  pinMode(BUZZER, OUTPUT);
-  #endif
-
-  #if OPEN_DOOR_BUTTON_ENABLED
-  pinMode(OPEN_DOOR, INPUT_PULLUP);
-  #endif
-
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  intercom.begin(4800);
-
-  Blynk.begin(blynkToken, ssid, wifiPassword);
-
-  lastOpenDoorTime = 0;
-
-  FastLED.addLeds<NEOPIXEL, LED_STRIP>(leds, NUM_LEDS);
-  FastLED.setBrightness(120);
-
-  pinMode(LED_STRIP, OUTPUT_OPEN_DRAIN);
-  
-  ledStripBlink(CRGB::Red);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(500);
-  digitalWrite(LED_BUILTIN, LOW);
-
-  ledStripBlink(CRGB::Green);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(500);
-  digitalWrite(LED_BUILTIN, LOW);
-
-  ledStripBlink(CRGB::Blue);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(500);
-  digitalWrite(LED_BUILTIN, LOW);
 }
 
 
@@ -230,7 +206,6 @@ void transmitMessage(byte msgCode, byte msgAddr)
   terminal.flush();
 }
 
-
 void processMessage(byte msgCode, byte msgAddr) 
 {
   #ifdef SERIAL_OUTPUT
@@ -253,7 +228,7 @@ void processMessage(byte msgCode, byte msgAddr)
     {
     case MSG_CALL_TO_SECONDARY_SWITCHBOARD:
     case MSG_CALL_FROM_ENTRY_DOOR:
-      ledStripBlink(CRGB::Red);
+      notifyCall(CRGB::Red);
       break;
     case MSG_CALL_FROM_ENTRY_DOOR_SCREEN_ON:
       // If I opened the door less than 60 seconds ago, open
@@ -264,7 +239,7 @@ void processMessage(byte msgCode, byte msgAddr)
         transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
       } else {
         Blynk.notify("Someone is calling at the door");
-        ledStripBlink(CRGB::Red);
+        notifyCall(CRGB::Red);
       }
       break;
     case MSG_OPEN_DOOR:
@@ -272,6 +247,92 @@ void processMessage(byte msgCode, byte msgAddr)
       break;
     }
   }
+}
+
+void toggleSilentMode() {
+  silentMode = !silentMode;
+  if (silentMode) {
+    #ifdef SERIAL_OUTPUT
+    Serial.println("Silent mode: on");
+    #endif
+    fill_solid(leds, NUM_LEDS, SILENT_MODE_COLOR);
+    FastLED.show(); 
+  } else {
+    #ifdef SERIAL_OUTPUT
+    Serial.println("Silent mode: off");
+    #endif
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    FastLED.show();
+  }
+}
+
+void buttonPressedDuration(uint8_t pinIn, unsigned long duration)
+{
+  // Toggle silent mode when the button remains tapped for more than 1s.
+  if (!longTap && duration > 1000) {
+    longTap = true;
+    toggleSilentMode();
+  }
+}
+
+void buttonReleasedDuration(uint8_t pinIn, unsigned long duration)
+{  
+  if (duration < 1000) {
+      transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
+      lastOpenDoorTime = millis();
+  }
+
+  longTap = false;
+}
+
+void setup() 
+{
+  #ifdef SERIAL_OUTPUT
+  Serial.begin(115200);
+  delay(1000);
+  #endif
+
+  #if BUZZER_ENABLED
+  pinMode(BUZZER, OUTPUT);
+  #endif
+
+  #if OPEN_DOOR_BUTTON_ENABLED
+  inputButton.registerCallbacks(
+    NULL, NULL, buttonPressedDuration, buttonReleasedDuration);
+
+  inputButton.setup(
+    OPEN_DOOR, 
+    BUTTON_DEBOUNCE_DELAY, 
+    InputDebounce::PIM_INT_PULL_UP_RES);
+  #endif
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  intercom.begin(4800);
+
+  Blynk.begin(blynkToken, ssid, wifiPassword);
+
+  lastOpenDoorTime = 0;
+
+  FastLED.addLeds<NEOPIXEL, LED_STRIP>(leds, NUM_LEDS);
+  FastLED.setBrightness(120);
+
+  pinMode(LED_STRIP, OUTPUT_OPEN_DRAIN);
+  
+  notifyCall(CRGB::Red);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  notifyCall(CRGB::Green);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
+
+  notifyCall(CRGB::Blue);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 // 
@@ -291,15 +352,7 @@ void loop()
 {
   Blynk.run();
 
-  #ifdef OPEN_DOOR_BUTTON_ENABLED
-  if (digitalRead(OPEN_DOOR) == LOW) {
-    unsigned long currentTime = millis();
-    if (currentTime - lastOpenDoorTime > 1000) {
-      transmitMessage(MSG_OPEN_DOOR, MY_ADDRESS);
-      lastOpenDoorTime = millis();
-    }
-  }
-  #endif
+  inputButton.process(millis());
 
   if (intercom.available())
   {
