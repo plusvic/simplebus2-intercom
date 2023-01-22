@@ -1,3 +1,11 @@
+
+///////////////////////////////////////////////////////////////////////////////
+// Copy from https://blynk.cloud/
+//
+#define BLYNK_TEMPLATE_ID ""
+#define BLYNK_DEVICE_NAME ""
+#define BLYNK_AUTH_TOKEN ""
+
 #ifdef WEMOS_D1_MINI
 #define BLYNK_PRINT Serial
 #endif
@@ -43,18 +51,12 @@ const int SILENT_MODE_COLOR  = CRGB::Blue;
 ///////////////////////////////////////////////////////////////////////////////
 // SSID of the WiFi network to connect.
 //
-const char *ssid = "WiFi SSID here"; 
+const char *ssid = "<WIFI SSID here>"; 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Password required to connect to the WiFi network.
 //
-const char *wifiPassword = "WiFi password here";  
-
-
-///////////////////////////////////////////////////////////////////////////////
-// Blynk token.
-//
-const char *blynkToken = "Blynk token here";
+const char *wifiPassword = "<WIFI password here>";  
 
 ///////////////////////////////////////////////////////////////////////////////
 // Message codes
@@ -310,7 +312,7 @@ void setup()
 
   intercom.begin(4800);
 
-  Blynk.begin(blynkToken, ssid, wifiPassword);
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, wifiPassword);
 
   lastOpenDoorTime = 0;
 
