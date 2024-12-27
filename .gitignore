@@ -1,0 +1,9 @@
+.vscode
+.idea
+buzzer/target/
+repeater_v2/target/
+repeater_v2/pcb/repeater_v2-backups
+remote_unit/target
+remote_unit_v2/target
+remote_unit_v2/pcb/remote_unit_v2-backups
+

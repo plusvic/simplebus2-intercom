@@ -1,0 +1,23 @@
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+runner = "probe-rs run --chip RP2040 --protocol swd"
+
+rustflags = [
+  "-C", "linker=flip-link",
+
+  # Code-size optimizations.
+  #   trap unreachable can save a lot of space, but requires nightly compiler.
+  #   uncomment the next line if you wish to enable it
+  # "-Z", "trap-unreachable=no",
+  "-C", "no-vectorize-loops",
+]
+
+[build]
+target = "thumbv6m-none-eabi"
+
+[env]
+DEFMT_LOG = "debug"
+WIFI_SSID = "Mafalda"
+WIFI_PASSWORD = "1nt3l1ns1d3"
+MQTT_BROKER = "broker.hivemq.com"  # "34650f89026a42f9a56d83fd171acd2e.s1.eu.hivemq.cloud";
+
+

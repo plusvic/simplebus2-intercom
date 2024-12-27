@@ -1,0 +1,38 @@
+[package]
+name = "async-button"
+version = "0.1.0"
+edition = "2021"
+authors = ["Alexander van Saase <avsaase at gmail dot com>"]
+description = "Async button handling crate for no_std environments"
+keywords = ["no_std", "async", "embassy", "button", "embedded"]
+categories = ["no-std", "embedded", "asynchronous"]
+repository = "https://github.com/avsaase/async-button"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+cfg-if = "1.0.0"
+
+embassy-time =  {git = "https://github.com/embassy-rs/embassy", rev="ce4aabafa09a28382e7e2db2120d7d645916ac75"}
+embedded-hal-async = "1.0.0"
+embedded-hal = "1.0.0"
+defmt = { version = "0.3.5", optional = true }
+
+tokio = { version = "1.34.0", default-features = false, optional = true }
+
+[dev-dependencies]
+embedded-hal-mock = { version = "0.10.0", default-features = false, features = [
+    "eh1",
+    "embedded-time",
+    "embedded-hal-async",
+] }
+tokio = { version = "1.34.0", features = ["rt", "macros", "time", "test-util"] }
+claims = "0.7.1"
+
+[features]
+default = []
+defmt = ["dep:defmt", "embassy-time/defmt"]
+std = ["dep:tokio"]
+
+[patch.crates-io]
+embedded-hal-mock = { git = "https://github.com/avsaase/embedded-hal-mock/", rev = "bec7a531d1e91fa19ef43abfb4af629000b15e90" }
