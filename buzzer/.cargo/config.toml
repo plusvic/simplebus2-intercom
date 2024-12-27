@@ -1,0 +1,6 @@
+[build]
+target = "attiny13.json"
+
+[unstable]
+# equivalent to passing `-Z build-std=core` to cargo.
+build-std = ["core"]

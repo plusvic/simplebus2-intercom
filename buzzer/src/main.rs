@@ -25,17 +25,15 @@ fn main() -> ! {
     // and divide the delays by 10. For waiting 100 microseconds we call 
     // delay_us(10).
     let mut delay = hal::delay::Delay::<MHz12>::new();
-    let mut output = pins.pb0.into_output();
 
-    output.set_high();
-
+    let mut output = pins.pb0.into_output_high();
 
     loop {
         uart_tx(MSG << 6, &mut output);
         uart_tx(ADDR << 4 | MSG >> 2, &mut output);
         uart_tx(CHECKSUM << 4 | ADDR >> 4, &mut output);
 
-        delay.delay_ms(25_u16);  // 250 ms
+        delay.delay_ms(175_u8);  // 1750ms
     }
 }
 

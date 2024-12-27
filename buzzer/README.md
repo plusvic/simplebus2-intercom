@@ -11,9 +11,7 @@
 
 ## How to build
 
-
 ```bash
-rustup override set nightly
 cargo build --release
 objcopy -O ihex target/attiny13/release/buzzer.elf target/attiny13/release/buzzer.hex
 minipro -w target/attiny13/release/buzzer.hex -p ATTINY13@DIP8
