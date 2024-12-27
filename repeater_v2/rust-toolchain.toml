@@ -1,0 +1,6 @@
+[toolchain]
+channel = "nightly-2024-01-04-x86_64-unknown-linux-gnu"
+# The rust-src component is needed so that we can use -Z build-std=core
+# for building the standard library.
+components = ["rust-src"]
+profile = "minimal"

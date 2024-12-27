@@ -1,0 +1,23 @@
+[package]
+name = "repeater_v2"
+version = "0.1.0"
+authors = ["Victor M. Alvarez <plusvic@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+attiny-hal = { git = "https://github.com/rahix/avr-hal", rev = "949130a5377b9ec5426b80699e56f3e876b6be41", features = ["attiny85", "rt"] }
+# attiny-hal depends on avr-device 0.5.4
+avr-device = { version = "0.5.4", features = ["attiny85", "rt"]  }
+panic-halt = "1.0.0"
+
+[profile.dev]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+debug = true
+lto = true
+opt-level = "s"
