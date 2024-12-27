@@ -1,6 +1,7 @@
 .vscode
 .idea
 buzzer/target/
+repeater/pcb/simplebus2-repeater-backups
 repeater_v2/target/
 repeater_v2/pcb/repeater_v2-backups
 remote_unit/target
