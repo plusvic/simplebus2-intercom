@@ -93,7 +93,7 @@ pub async fn init_network<'a>(
     }
 
     let mut built_in_led_status = false;
-    control.gpio_set(0, built_in_led_status).await;
+    control.gpio_set(0, false).await;
 
     // Wait for DHCP.
     loop {
@@ -113,6 +113,8 @@ pub async fn init_network<'a>(
             }
         }
     }
+
+    control.gpio_set(0, true).await;
 
     (stack, control)
 }

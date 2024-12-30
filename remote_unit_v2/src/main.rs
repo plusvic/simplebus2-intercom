@@ -312,6 +312,12 @@ async fn mqtt_task_loop(stack: Stack<'static>) -> Result<(), MqttError> {
                     }
                     (MQTT_CMD_TOPIC, b"camera_on") => {
                         info!("MQTT RX: camera on");
+                        outbound
+                            .publish(Message {
+                                code: Code::CAMERA_ON,
+                                address: MY_INTERCOM_ADDRESS,
+                            })
+                            .await;
                     }
                     (topic, cmd) => {
                         error!("MQTT: unknown command {}/{}", topic, cmd)
@@ -347,8 +353,6 @@ async fn feedback_task(
 ) {
     let mut inbound = INBOUND_MESSAGES.subscriber().unwrap();
     let mut motor = Output::new(motor, Level::Low);
-
-    led_strip.all(BLACK).await;
 
     loop {
         match inbound.next_message().await {
@@ -432,6 +436,8 @@ async fn main(spawner: Spawner) -> ! {
         #[allow(static_mut_refs)]
         LED_STRIP.assume_init_ref()
     };
+
+    led_strip.all(BLACK).await;
 
     unwrap!(spawner.spawn(feedback_task(led_strip, peripherals.PIN_10)));
 
