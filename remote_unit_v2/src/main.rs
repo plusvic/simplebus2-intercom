@@ -131,7 +131,7 @@ struct Message {
 impl Message {
     pub fn from_raw_bytes(b: &[u8; 3]) -> Option<Self> {
         let address = b[1] >> 4 | b[2] << 4;
-        let code = b[0] >> 6 | b[1] & 0x0F << 2;
+        let code = (b[0] >> 4 | b[1] << 4) >> 2;
         let checksum = b[2] >> 4;
         // Make sure the message is valid, the number of 1s in code and
         // address must be equal to checksum.
@@ -357,7 +357,7 @@ async fn feedback_task(
     loop {
         match inbound.next_message().await {
             WaitResult::Message(message) => match message.code {
-                Code::CALL | Code::CALL_END | Code::OPEN_DOOR=> {
+                Code::CALL | Code::CALL_END => {
                     // The LED strip and the motor are turned on alternately
                     // and not simultaneously to reduce peak power demand.
                     led_strip.all(BLUE).await;
@@ -401,7 +401,7 @@ static INBOUND_MESSAGES: PubSubChannel<
     1, // Publishers
 > = PubSubChannel::new();
 
-/// PubSub channel where we put messages the outgoing messages.
+/// PubSub channel where we the outgoing messages.
 static OUTBOUND_MESSAGES: PubSubChannel<
     CriticalSectionRawMutex,
     Message,
