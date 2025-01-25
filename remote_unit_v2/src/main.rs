@@ -131,7 +131,7 @@ struct Message {
 impl Message {
     pub fn from_raw_bytes(b: &[u8; 3]) -> Option<Self> {
         let address = b[1] >> 4 | b[2] << 4;
-        let code = b[0] >> 6 | b[1] << 2;
+        let code = b[0] >> 6 | b[1] & 0x0F << 2;
         let checksum = b[2] >> 4;
         // Make sure the message is valid, the number of 1s in code and
         // address must be equal to checksum.
