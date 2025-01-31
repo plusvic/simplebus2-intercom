@@ -23,7 +23,7 @@ use embassy_rp::{bind_interrupts, dma, uart, Peripheral};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::{PubSubChannel, WaitResult};
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embedded_io_async::{Read, Write};
 use rand_core::RngCore;
 use rgb::RGB8;
@@ -55,9 +55,8 @@ async fn net_task(mut runner: Runner<'static, NetDriver<'static>>) -> ! {
     runner.run().await
 }
 
-const NUM_LEDS: usize = 3;
+const NUM_LEDS: usize = 59;
 const RED: RGB8 = RGB8::new(255, 0, 0);
-const GREEN: RGB8 = RGB8::new(0, 255, 0);
 const BLUE: RGB8 = RGB8::new(0, 0, 255);
 const BLACK: RGB8 = RGB8::new(0, 0, 0);
 
@@ -108,6 +107,7 @@ struct Code(u8);
 
 impl Code {
     const OPEN_DOOR: Code = Code(16);
+    const CALL_SECONDARY_SWITCHBOARD: Code = Code(19);
     const CAMERA_ON: Code = Code(20);
     const CALL_FLOOR_DOOR: Code = Code(21);
     const CALL: Code = Code(48);
@@ -135,7 +135,10 @@ impl Message {
         let checksum = b[2] >> 4;
         // Make sure the message is valid, the number of 1s in code and
         // address must be equal to checksum.
-        if u8::count_ones(code) + u8::count_ones(address) == checksum as u32 {
+        if checksum != 0
+            && u8::count_ones(code) + u8::count_ones(address)
+                == checksum as u32
+        {
             Some(Self { code: Code(code), address })
         } else {
             None
@@ -166,12 +169,11 @@ async fn uart_task(mut uart: Uart<'static, UART0, Async>) {
     let mut uart_tx = OUTBOUND_MESSAGES.subscriber().unwrap();
 
     loop {
-        // Wait for a message received through UART, or a message published to
-        // UART_TX_MESSAGES that must be sent through UART, whatever comes
-        // first.
+        // Wait for a message received through UART, or a message that was published
+        // to OUTBOUND_MESSAGES and must be sent through UART, whatever comes first.
         match select(uart.read(&mut msg_bytes), uart_tx.next_message()).await {
             // A message was received through UART, it must be published to the
-            // UART_RX_MESSAGES pubsub.
+            // INBOUND_MESSAGES pubsub.
             Either::First(Ok(_)) => {
                 if let Some(msg) = Message::from_raw_bytes(&msg_bytes) {
                     info!("UART RX: {:?}", msg);
@@ -184,7 +186,7 @@ async fn uart_task(mut uart: Uart<'static, UART0, Async>) {
             Either::First(Err(err)) => {
                 error!("Error reading from UART: {:?}", err);
             }
-            // A message was received from the UART_TX_MESSAGES pubsub, it must
+            // A message was received from the OUTBOUND_MESSAGES pubsub, it must
             // be sent through UART.
             Either::Second(WaitResult::Message(msg)) => {
                 info!("UART TX: {:?}", msg);
@@ -351,13 +353,16 @@ async fn feedback_task(
     led_strip: &'static LedStrip<'static, PIO0, NUM_LEDS>,
     motor: PIN_10,
 ) {
+    let outbound = OUTBOUND_MESSAGES.publisher().unwrap();
     let mut inbound = INBOUND_MESSAGES.subscriber().unwrap();
     let mut motor = Output::new(motor, Level::Low);
 
     loop {
         match inbound.next_message().await {
             WaitResult::Message(message) => match message.code {
-                Code::CALL | Code::CALL_END => {
+                Code::CALL
+                | Code::CALL_END
+                | Code::CALL_SECONDARY_SWITCHBOARD => {
                     // The LED strip and the motor are turned on alternately
                     // and not simultaneously to reduce peak power demand.
                     led_strip.all(BLUE).await;
@@ -371,8 +376,19 @@ async fn feedback_task(
                         Timer::after_millis(500).await;
                         motor.set_low();
                     }
+                    // The call arrives less than 30s since the last time the
+                    // door was opened. Open again automatically.
+                    let last_open = LAST_OPEN.lock().await;
+                    if Instant::elapsed(&last_open).as_secs() < 30 {
+                        outbound
+                            .publish(Message {
+                                code: Code::OPEN_DOOR,
+                                address: MY_INTERCOM_ADDRESS,
+                            })
+                            .await;
+                    };
                 }
-                Code::CALL_FLOOR_DOOR  => {
+                Code::CALL_FLOOR_DOOR => {
                     led_strip.all(BLUE).await;
                     Timer::after_millis(750).await;
                     led_strip.all(RED).await;
@@ -396,22 +412,26 @@ async fn feedback_task(
 static INBOUND_MESSAGES: PubSubChannel<
     CriticalSectionRawMutex,
     Message,
-    3, // Capacity
+    5, // Capacity
     3, // Subscribers, `uart_task`, `mqtt_task` and `feedback_task`.
     1, // Publishers
 > = PubSubChannel::new();
 
-/// PubSub channel where we the outgoing messages.
+/// PubSub channel where we put the outgoing messages.
 static OUTBOUND_MESSAGES: PubSubChannel<
     CriticalSectionRawMutex,
     Message,
-    3, // Capacity
-    1, // Subscribers
-    2, // Publishers, one for `uart_task` and another one for the main loop.
+    5, // Capacity
+    1, // Subscribers, `feedback_task` and main loop.
+    3, // Publishers, `uart_task`, `feedback_task` and main loop.
 > = PubSubChannel::new();
 
 /// When true, the haptic feedback is disabled.
 static MUTED: Mutex<CriticalSectionRawMutex, bool> = Mutex::new(false);
+
+/// Stores the last time the door was opened.
+static LAST_OPEN: Mutex<CriticalSectionRawMutex, Instant> =
+    Mutex::new(Instant::MIN);
 
 /// Represents the WS2812 LED strip used for providing feedback.
 static mut LED_STRIP: MaybeUninit<LedStrip<PIO0, NUM_LEDS>> =
@@ -483,6 +503,8 @@ async fn main(spawner: Spawner) -> ! {
                         address: MY_INTERCOM_ADDRESS,
                     })
                     .await;
+                let mut last_open = LAST_OPEN.lock().await;
+                *last_open = Instant::now();
             }
             ButtonEvent::LongPress => {
                 // A long press toggles the muted state.
